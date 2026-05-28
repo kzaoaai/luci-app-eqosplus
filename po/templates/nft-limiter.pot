@@ -1,0 +1,79 @@
+
+msgid "NFT Limiter"
+msgstr ""
+
+msgid "Per-device bandwidth control via nftables rate limiting. Requires OpenWrt 25.12+ with firewall4 / nftables."
+msgstr ""
+
+msgid "Global Settings"
+msgstr ""
+
+msgid "Enable NFT Limiter"
+msgstr ""
+
+msgid "Service Status"
+msgstr ""
+
+msgid "Global Download Limit (Mbit/s)"
+msgstr ""
+
+msgid "Global Upload Limit (Mbit/s)"
+msgstr ""
+
+msgid "Rate-Limited Interfaces"
+msgstr ""
+
+msgid "Per-Device Rules"
+msgstr ""
+
+msgid "Device (IP / Range)"
+msgstr ""
+
+msgid "Down (Mbit/s)"
+msgstr ""
+
+msgid "Up (Mbit/s)"
+msgstr ""
+
+msgid "Time Start"
+msgstr ""
+
+msgid "Time End"
+msgstr ""
+
+msgid "Days"
+msgstr ""
+
+msgid "Comment"
+msgstr ""
+
+msgid "Upload bandwidth(Mbit/s)"
+msgstr ""
+
+msgid "Download bandwidth(Mbit/s)"
+msgstr ""
+
+msgid "Start control time"
+msgstr ""
+
+msgid "Stop control time"
+msgstr ""
+
+msgid "Week Day(1~7)"
+msgstr ""
+
+msgid "Suggested feedback:"
+msgstr ""
+
+msgid "Set the interface used for restriction, use pppoe-wan for dialing, use WAN hardware interface for DHCP mode (such as eth1), and use br-lan for bypass mode"
+msgstr ""
+
+msgid "Rest Day"
+msgstr ""
+
+msgid "Workday"
+msgstr ""
+
+msgid "Automatic settings"
+msgstr ""
+

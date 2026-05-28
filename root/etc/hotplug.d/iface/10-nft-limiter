@@ -1,0 +1,7 @@
+#!/bin/sh
+[ "$ACTION" = "ifup" ] || exit 0
+ifaces=$(uci -q get nftlimiter.@nftlimiter[0].iface)
+[ -z "$ifaces" ] && ifaces="wan"
+case " $ifaces " in
+    *" $INTERFACE "*) sleep 5; /etc/init.d/nft-limiter restart ;;
+esac

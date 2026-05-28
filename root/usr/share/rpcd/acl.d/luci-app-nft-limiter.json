@@ -1,0 +1,14 @@
+{
+	"luci-app-nft-limiter": {
+		"description": "Grant access for luci-app-nft-limiter",
+		"read": {
+			"uci": [ "nftlimiter" ],
+			"file": {
+				"/usr/sbin/nft": [ "exec" ]
+			}
+		},
+		"write": {
+			"uci": [ "nftlimiter" ]
+		}
+	}
+}

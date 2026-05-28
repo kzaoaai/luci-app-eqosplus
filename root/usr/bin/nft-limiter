@@ -1,0 +1,288 @@
+#!/bin/sh
+# nft-limiter - pure nftables traffic shaping engine for OpenWrt 25.12+ / fw4
+#
+# Supported target formats:
+#   Range : 192.168.1.1-192.168.1.200  -> ip daddr/saddr (nftables native)
+#   CIDR  : 192.168.1.0/24             -> ip daddr/saddr
+#   IP    : 192.168.1.50               -> ip daddr/saddr
+#
+# Interface scoping: rules match only on user-selected WAN/VPN interfaces
+# (meta iifname for download, meta oifname for upload), so LAN-to-LAN
+# traffic is never rate-limited.
+#
+# Commands: start | stop | add <idx> | del <idx> | status
+
+. /lib/functions.sh
+
+NAME="nftlimiter"
+NFT_TABLE="fw4"
+NFT_CHAIN="custom_qos_enforce"
+NFT_FILE="/var/run/nftlimiter.nft"
+
+_iface_set=""
+
+# -----------------------------------------------------------------------
+# _build_iface_set -- read UCI iface option, build nft set string
+#   e.g. _iface_set becomes:  "wan", "wg0"
+# -----------------------------------------------------------------------
+_build_iface_set() {
+    local ifaces i dev
+    ifaces=$(uci -q get "${NAME}.@${NAME}[0].iface")
+    [ -z "$ifaces" ] && ifaces="wan"
+    _iface_set=""
+    for i in $ifaces; do
+        dev=$(ifstatus "$i" 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)
+        [ -z "$dev" ] && dev="$i"
+        _iface_set="${_iface_set:+${_iface_set}, }\"${dev}\""
+    done
+}
+
+# -----------------------------------------------------------------------
+# check_firewall_hook -- inject fw4 include once (idempotent)
+# Ensures QoS rules survive every firewall reload.
+# -----------------------------------------------------------------------
+check_firewall_hook() {
+    if ! uci show firewall | grep -q "path='/usr/bin/nft-limiter'"; then
+        uci add firewall include >/dev/null
+        uci set firewall.@include[-1].type='script'
+        uci set firewall.@include[-1].path='/usr/bin/nft-limiter'
+        uci set firewall.@include[-1].fw4_compatible='1'
+        uci commit firewall
+    fi
+}
+
+# -----------------------------------------------------------------------
+# _rule_lines <idx> <target> <dl_kb> <ul_kb> <time_expr> <day_expr>
+#   Outputs nftables rule lines (8-space indent) to stdout.
+#   Uses global $_iface_set for interface scoping.
+# -----------------------------------------------------------------------
+_rule_lines() {
+    local idx="$1" target="$2" dl_kb="$3" ul_kb="$4" time_expr="$5" day_expr="$6"
+    local prefix=""
+    [ -n "$time_expr" ] && prefix="${time_expr} "
+    [ -n "$day_expr"  ] && prefix="${prefix}${day_expr} "
+
+    local dl_match="meta iifname { ${_iface_set} } ip daddr $target"
+    local ul_match="meta oifname { ${_iface_set} } ip saddr $target"
+
+    if [ "$dl_kb" -gt 0 ] 2>/dev/null; then
+        local dl_burst=$((dl_kb * 2))
+        printf '        %s %slimit rate over %s kbytes/second burst %s kbytes drop comment "dev_%s_dl"\n' \
+            "$dl_match" "$prefix" "$dl_kb" "$dl_burst" "$idx"
+    fi
+    printf '        %s %saccept comment "dev_%s_dl_pass"\n' "$dl_match" "$prefix" "$idx"
+    if [ "$ul_kb" -gt 0 ] 2>/dev/null; then
+        local ul_burst=$((ul_kb * 2))
+        printf '        %s %slimit rate over %s kbytes/second burst %s kbytes drop comment "dev_%s_ul"\n' \
+            "$ul_match" "$prefix" "$ul_kb" "$ul_burst" "$idx"
+    fi
+    printf '        %s %saccept comment "dev_%s_ul_pass"\n' "$ul_match" "$prefix" "$idx"
+}
+
+# -----------------------------------------------------------------------
+# _catch_all_lines <dl_kb> <ul_kb>
+#   Outputs catch-all rate limit rules for traffic not matched by any
+#   per-device rule.  Uses global $_iface_set.  Must be appended LAST.
+# -----------------------------------------------------------------------
+_catch_all_lines() {
+    local dl_kb="$1" ul_kb="$2"
+    if [ "$dl_kb" -gt 0 ] 2>/dev/null; then
+        local dl_burst=$((dl_kb * 2))
+        printf '        meta iifname { %s } limit rate over %s kbytes/second burst %s kbytes drop comment "default_dl"\n' \
+            "$_iface_set" "$dl_kb" "$dl_burst"
+    fi
+    if [ "$ul_kb" -gt 0 ] 2>/dev/null; then
+        local ul_burst=$((ul_kb * 2))
+        printf '        meta oifname { %s } limit rate over %s kbytes/second burst %s kbytes drop comment "default_ul"\n' \
+            "$_iface_set" "$ul_kb" "$ul_burst"
+    fi
+}
+
+# -----------------------------------------------------------------------
+# _time_and_day_expr <timestart> <timeend> <week>
+#   Sets shell variables _time_expr and _day_expr for use in rules.
+# -----------------------------------------------------------------------
+_time_and_day_expr() {
+    local ts="$1" te="$2" week="$3"
+    _time_expr=""
+    _day_expr=""
+
+    if [ -n "$ts" ] && [ -n "$te" ]; then
+        if [ "$ts" != "00:00" ] || [ "$te" != "00:00" ]; then
+            _time_expr="meta hour \"${ts}\"-\"${te}\""
+        fi
+    fi
+
+    if [ -n "$week" ] && [ "$week" != "0" ]; then
+        local nft_days="" d nd
+        for d in $(echo "$week" | tr ',' ' '); do
+            [ "$d" -eq 7 ] && nd=0 || nd="$d"
+            nft_days="${nft_days:+${nft_days}, }${nd}"
+        done
+        _day_expr="meta day { ${nft_days} }"
+    fi
+}
+
+# -----------------------------------------------------------------------
+# generate_rule <cfg>  -- config_foreach callback; appends to $NFT_FILE
+# -----------------------------------------------------------------------
+_cfg_idx=0
+generate_rule() {
+    local cfg="$1"
+    local enable target download upload timestart timeend week
+
+    config_get_bool enable "$cfg" enable 1
+    if [ "$enable" -eq 0 ]; then
+        _cfg_idx=$((_cfg_idx + 1))
+        return 0
+    fi
+
+    config_get target    "$cfg" target
+    config_get download  "$cfg" download
+    config_get upload    "$cfg" upload
+    config_get timestart "$cfg" timestart
+    config_get timeend   "$cfg" timeend
+    config_get week      "$cfg" week
+
+    if [ -n "$target" ]; then
+        local dl_kb ul_kb
+        dl_kb=$(awk -v v="${download:-0}" 'BEGIN { printf "%.0f", v * 125 }')
+        ul_kb=$(awk -v v="${upload:-0}"   'BEGIN { printf "%.0f", v * 125 }')
+        _time_and_day_expr "$timestart" "$timeend" "$week"
+        _rule_lines "$_cfg_idx" "$target" "$dl_kb" "$ul_kb" "$_time_expr" "$_day_expr" >> "$NFT_FILE"
+    fi
+    _cfg_idx=$((_cfg_idx + 1))
+}
+
+# -----------------------------------------------------------------------
+# build_chain -- flush and rebuild the complete QoS chain from UCI config
+# -----------------------------------------------------------------------
+build_chain() {
+    _cfg_idx=0
+    config_load "$NAME"
+    _build_iface_set
+
+    {
+        printf 'table inet %s {\n' "$NFT_TABLE"
+        printf '    chain %s {\n' "$NFT_CHAIN"
+        printf '        type filter hook forward priority filter - 5; policy accept;\n'
+        printf '    }\n}\n\n'
+        printf 'flush chain inet %s %s\n\n' "$NFT_TABLE" "$NFT_CHAIN"
+        printf 'table inet %s {\n    chain %s {\n' "$NFT_TABLE" "$NFT_CHAIN"
+    } > "$NFT_FILE"
+
+    config_foreach generate_rule device
+
+    local def_dl def_ul def_dl_kb def_ul_kb
+    def_dl=$(uci -q get "${NAME}.@${NAME}[0].download")
+    def_ul=$(uci -q get "${NAME}.@${NAME}[0].upload")
+    def_dl_kb=$(awk -v v="${def_dl:-0}" 'BEGIN { printf "%.0f", v * 125 }')
+    def_ul_kb=$(awk -v v="${def_ul:-0}" 'BEGIN { printf "%.0f", v * 125 }')
+    _catch_all_lines "$def_dl_kb" "$def_ul_kb" >> "$NFT_FILE"
+
+    printf '    }\n}\n' >> "$NFT_FILE"
+    nft -f "$NFT_FILE"
+}
+
+# -----------------------------------------------------------------------
+# del_device_rules <idx> -- remove rules for device <idx> by nft handle
+# -----------------------------------------------------------------------
+del_device_rules() {
+    local idx="$1" handle tag
+    for tag in dl dl_pass ul ul_pass; do
+        handle=$(nft -a list chain inet "${NFT_TABLE}" "${NFT_CHAIN}" 2>/dev/null \
+            | grep "comment \"dev_${idx}_${tag}\"" \
+            | grep -o 'handle [0-9]*' | awk '{print $2}')
+        [ -n "$handle" ] && \
+            nft delete rule inet "${NFT_TABLE}" "${NFT_CHAIN}" handle "$handle" 2>/dev/null
+    done
+}
+
+# -----------------------------------------------------------------------
+# add_device_rules <idx> -- read UCI for device <idx>, append its rules
+# -----------------------------------------------------------------------
+add_device_rules() {
+    local idx="$1"
+    del_device_rules "$idx"
+    _build_iface_set
+
+    local enable target download upload timestart timeend week
+    enable=$(uci -q get "${NAME}.@device[${idx}].enable")
+    [ "$enable" != "1" ] && return 0
+
+    target=$(uci -q get "${NAME}.@device[${idx}].target")
+    [ -z "$target" ] && return 0
+
+    download=$(uci -q get "${NAME}.@device[${idx}].download" || echo "0")
+    upload=$(uci    -q get "${NAME}.@device[${idx}].upload"  || echo "0")
+    timestart=$(uci -q get "${NAME}.@device[${idx}].timestart")
+    timeend=$(uci   -q get "${NAME}.@device[${idx}].timeend")
+    week=$(uci      -q get "${NAME}.@device[${idx}].week")
+
+    local dl_kb ul_kb
+    dl_kb=$(awk -v v="${download:-0}" 'BEGIN { printf "%.0f", v * 125 }')
+    ul_kb=$(awk -v v="${upload:-0}"   'BEGIN { printf "%.0f", v * 125 }')
+
+    _time_and_day_expr "$timestart" "$timeend" "$week"
+
+    local handle ctag
+    for ctag in default_dl default_ul; do
+        handle=$(nft -a list chain inet "${NFT_TABLE}" "${NFT_CHAIN}" 2>/dev/null \
+            | grep "comment \"${ctag}\"" \
+            | grep -o 'handle [0-9]*' | awk '{print $2}')
+        [ -n "$handle" ] && \
+            nft delete rule inet "${NFT_TABLE}" "${NFT_CHAIN}" handle "$handle" 2>/dev/null
+    done
+
+    local def_dl def_ul def_dl_kb def_ul_kb
+    def_dl=$(uci -q get "${NAME}.@${NAME}[0].download")
+    def_ul=$(uci -q get "${NAME}.@${NAME}[0].upload")
+    def_dl_kb=$(awk -v v="${def_dl:-0}" 'BEGIN { printf "%.0f", v * 125 }')
+    def_ul_kb=$(awk -v v="${def_ul:-0}" 'BEGIN { printf "%.0f", v * 125 }')
+
+    local tmp="/tmp/nftlimiter_dev${idx}.nft"
+    {
+        printf 'table inet %s {\n    chain %s {\n' "$NFT_TABLE" "$NFT_CHAIN"
+        _rule_lines "$idx" "$target" "$dl_kb" "$ul_kb" "$_time_expr" "$_day_expr"
+        _catch_all_lines "$def_dl_kb" "$def_ul_kb"
+        printf '    }\n}\n'
+    } > "$tmp"
+    nft -f "$tmp"
+    rm -f "$tmp"
+}
+
+# -----------------------------------------------------------------------
+# Main commands
+# -----------------------------------------------------------------------
+start() {
+    local enabled
+    enabled=$(uci -q get "${NAME}.@${NAME}[0].enabled")
+    [ "$enabled" != "1" ] && return 0
+    check_firewall_hook
+    build_chain
+}
+
+stop() {
+    nft delete chain inet "${NFT_TABLE}" "${NFT_CHAIN}" 2>/dev/null
+    rm -f "$NFT_FILE"
+}
+
+status() {
+    echo "=== nft-limiter status ==="
+    printf 'Enabled : %s\n' "$(uci -q get "${NAME}.@${NAME}[0].enabled)"
+    echo ""
+    echo "=== ${NFT_CHAIN} chain ==="
+    nft list chain inet "${NFT_TABLE}" "${NFT_CHAIN}" 2>/dev/null || echo "(chain not loaded)"
+    echo ""
+    echo "=== firewall4 hook ==="
+    uci show firewall 2>/dev/null | grep -A4 "nftlimiter" || echo "(no firewall hook)"
+}
+
+case "$1" in
+    start)  start ;;
+    stop)   stop ;;
+    add)    add_device_rules "$2" ;;
+    del)    del_device_rules "$2" ;;
+    status) status ;;
+    *)      start ;;
+esac
