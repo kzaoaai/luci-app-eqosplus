@@ -6,7 +6,7 @@
 START=99
 USE_PROCD=1
 
-NAME=nftlimiter
+NAME=nft-limiter
 
 start_service() {
     nft-limiter stop
@@ -19,7 +19,7 @@ start_service() {
 }
 
 service_triggers() {
-    procd_add_reload_trigger 'nftlimiter'
+    procd_add_reload_trigger 'nft-limiter'
 }
 
 stop_service() {

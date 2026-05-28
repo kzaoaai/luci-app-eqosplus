@@ -29,7 +29,7 @@ rm -f /tmp/luci-*
 endef
 
 define Package/$(PKG_NAME)/conffiles
-/etc/config/nftlimiter
+/etc/config/nft-limiter
 endef
 
 include $(TOPDIR)/feeds/luci/luci.mk

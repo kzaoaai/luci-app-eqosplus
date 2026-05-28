@@ -1,7 +1,7 @@
-module("luci.controller.nftlimiter", package.seeall)
+module("luci.controller.nft-limiter", package.seeall)
 
 function index()
-    if not nixio.fs.access("/etc/config/nftlimiter") then return end
+    if not nixio.fs.access("/etc/config/nft-limiter") then return end
     entry({"admin", "network"}, firstchild(), "Network", 44).dependent = false
 
     local e = entry({"admin", "network", "nft-limiter"}, view("nft-limiter"), _("NFT Limiter"), 65)

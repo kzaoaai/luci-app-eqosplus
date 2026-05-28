@@ -1,13 +1,13 @@
 #!/bin/sh
 chmod +x  /etc/init.d/nft-limiter /usr/bin/nft-limiter
 uci -q batch <<-EOF >/dev/null
-	delete ucitrack.@nftlimiter[-1]
-	add ucitrack nftlimiter
-	set ucitrack.@nftlimiter[-1].init=nft-limiter
+	delete ucitrack.@nft-limiter[-1]
+	add ucitrack nft-limiter
+	set ucitrack.@nft-limiter[-1].init=nft-limiter
 	commit ucitrack
 EOF
 
-[ -s /etc/config/nftlimiter ] || echo "config nftlimiter" > /etc/config/nftlimiter
+[ -s /etc/config/nft-limiter ] || echo "config nft-limiter" > /etc/config/nft-limiter
 
 rm -f /tmp/luci-indexcache
 exit 0

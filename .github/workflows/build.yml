@@ -37,7 +37,7 @@ jobs:
         uses: openwrt/gh-action-sdk@main
         env:
           ARCH: ${{ matrix.sdk }}
-          FEEDNAME: nftlimiter
+          FEEDNAME: nft-limiter
           PACKAGES: luci-app-nft-limiter
           BUILD_LOG: 1
           NO_REFRESH_CHECK: 1

@@ -14,10 +14,10 @@
 
 . /lib/functions.sh
 
-NAME="nftlimiter"
+NAME="nft-limiter"
 NFT_TABLE="fw4"
 NFT_CHAIN="custom_qos_enforce"
-NFT_FILE="/var/run/nftlimiter.nft"
+NFT_FILE="/var/run/nft-limiter.nft"
 
 _iface_set=""
 
@@ -240,7 +240,7 @@ add_device_rules() {
     def_dl_kb=$(awk -v v="${def_dl:-0}" 'BEGIN { printf "%.0f", v * 125 }')
     def_ul_kb=$(awk -v v="${def_ul:-0}" 'BEGIN { printf "%.0f", v * 125 }')
 
-    local tmp="/tmp/nftlimiter_dev${idx}.nft"
+    local tmp="/tmp/nft-limiter_dev${idx}.nft"
     {
         printf 'table inet %s {\n    chain %s {\n' "$NFT_TABLE" "$NFT_CHAIN"
         _rule_lines "$idx" "$target" "$dl_kb" "$ul_kb" "$_time_expr" "$_day_expr"
@@ -269,13 +269,13 @@ stop() {
 
 status() {
     echo "=== nft-limiter status ==="
-    printf 'Enabled : %s\n' "$(uci -q get "${NAME}.@${NAME}[0].enabled)"
+    printf 'Enabled : %s\n' "$(uci -q get "${NAME}.@${NAME}[0].enabled")"
     echo ""
     echo "=== ${NFT_CHAIN} chain ==="
     nft list chain inet "${NFT_TABLE}" "${NFT_CHAIN}" 2>/dev/null || echo "(chain not loaded)"
     echo ""
     echo "=== firewall4 hook ==="
-    uci show firewall 2>/dev/null | grep -A4 "nftlimiter" || echo "(no firewall hook)"
+    uci show firewall 2>/dev/null | grep -A4 "nft-limiter" || echo "(no firewall hook)"
 }
 
 case "$1" in

@@ -9,7 +9,7 @@ return view.extend({
     load: function() {
         return Promise.all([
             network.getHostHints(),
-            uci.load('nftlimiter'),
+            uci.load('nft-limiter'),
             L.resolveDefault(fs.exec_direct('/usr/sbin/nft', ['list', 'chain', 'inet', 'fw4', 'custom_qos_enforce']), null),
             network.getNetworks()
         ]);
@@ -30,7 +30,7 @@ return view.extend({
         }
         var m, s, o;
 
-        m = new form.Map('nftlimiter', _('NFT Limiter'), _(
+        m = new form.Map('nft-limiter', _('NFT Limiter'), _(
             'Per-device bandwidth control via nftables rate limiting. ' +
             'Requires OpenWrt 25.12+ with firewall4 / nftables.'
         ));
@@ -38,7 +38,7 @@ return view.extend({
         // ------------------------------------------------------------------
         // Global settings section
         // ------------------------------------------------------------------
-        s = m.section(form.TypedSection, 'nftlimiter', _('Global Settings'));
+        s = m.section(form.TypedSection, 'nft-limiter', _('Global Settings'));
         s.anonymous = true;
         s.addremove = false;
 
@@ -184,7 +184,7 @@ return view.extend({
         o.value('6', _('Sat'));
         o.value('7', _('Sun'));
         o.cfgvalue = function(section_id) {
-            var val = uci.get('nftlimiter', section_id, 'week');
+            var val = uci.get('nft-limiter', section_id, 'week');
             if (!val || val === '0') return '';
             return val.replace(/,/g, ' ');
         };
@@ -192,13 +192,13 @@ return view.extend({
             var val = Array.isArray(formvalue) ? formvalue.join(',') :
                       (formvalue ? String(formvalue).trim().replace(/\s+/g, ',') : '0');
             if (!val) val = '0';
-            uci.set('nftlimiter', section_id, 'week', val);
+            uci.set('nft-limiter', section_id, 'week', val);
         };
         o.remove = function(section_id) {
-            uci.set('nftlimiter', section_id, 'week', '0');
+            uci.set('nft-limiter', section_id, 'week', '0');
         };
         o.textvalue = function(section_id) {
-            var val = uci.get('nftlimiter', section_id, 'week');
+            var val = uci.get('nft-limiter', section_id, 'week');
             if (!val || val === '0') return _('Every day');
             var days = val.split(',').sort();
             var names = {'1':'Mon','2':'Tue','3':'Wed','4':'Thu','5':'Fri','6':'Sat','7':'Sun'};
