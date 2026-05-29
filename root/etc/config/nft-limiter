@@ -1,9 +1,14 @@
 
 config nft-limiter
 	option enabled '0'
+	option glimit '1'
 	option download '1000'
 	option upload '30'
 	option iface 'wan'
+	option gschedule '0'
+	option timestart '00:00'
+	option timeend '00:00'
+	option week '0'
 
 config device
 	option enable '1'

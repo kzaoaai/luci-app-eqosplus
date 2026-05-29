@@ -80,21 +80,27 @@ _rule_lines() {
 }
 
 # -----------------------------------------------------------------------
-# _catch_all_lines <dl_kb> <ul_kb>
+# _catch_all_lines <dl_kb> <ul_kb> <time_expr> <day_expr>
 #   Outputs catch-all rate limit rules for traffic not matched by any
 #   per-device rule.  Uses global $_iface_set.  Must be appended LAST.
+#   When time/day exprs are set, the catch-all only applies inside that
+#   window; outside it, un-matched traffic is unrestricted.
 # -----------------------------------------------------------------------
 _catch_all_lines() {
-    local dl_kb="$1" ul_kb="$2"
+    local dl_kb="$1" ul_kb="$2" time_expr="$3" day_expr="$4"
+    local prefix=""
+    [ -n "$time_expr" ] && prefix="${time_expr} "
+    [ -n "$day_expr"  ] && prefix="${prefix}${day_expr} "
+
     if [ "$dl_kb" -gt 0 ] 2>/dev/null; then
         local dl_burst=$((dl_kb * 2))
-        printf '        meta iifname { %s } limit rate over %s kbytes/second burst %s kbytes drop comment "default_dl"\n' \
-            "$_iface_set" "$dl_kb" "$dl_burst"
+        printf '        meta iifname { %s } %slimit rate over %s kbytes/second burst %s kbytes drop comment "default_dl"\n' \
+            "$_iface_set" "$prefix" "$dl_kb" "$dl_burst"
     fi
     if [ "$ul_kb" -gt 0 ] 2>/dev/null; then
         local ul_burst=$((ul_kb * 2))
-        printf '        meta oifname { %s } limit rate over %s kbytes/second burst %s kbytes drop comment "default_ul"\n' \
-            "$_iface_set" "$ul_kb" "$ul_burst"
+        printf '        meta oifname { %s } %slimit rate over %s kbytes/second burst %s kbytes drop comment "default_ul"\n' \
+            "$_iface_set" "$prefix" "$ul_kb" "$ul_burst"
     fi
 }
 
@@ -173,12 +179,22 @@ build_chain() {
 
     config_foreach generate_rule device
 
-    local def_dl def_ul def_dl_kb def_ul_kb
+    local def_glimit def_sched def_dl def_ul def_dl_kb def_ul_kb def_ts def_te def_week
+    def_glimit=$(uci -q get "${NAME}.@${NAME}[0].glimit")
     def_dl=$(uci -q get "${NAME}.@${NAME}[0].download")
     def_ul=$(uci -q get "${NAME}.@${NAME}[0].upload")
     def_dl_kb=$(awk -v v="${def_dl:-0}" 'BEGIN { printf "%.0f", v * 125 }')
     def_ul_kb=$(awk -v v="${def_ul:-0}" 'BEGIN { printf "%.0f", v * 125 }')
-    _catch_all_lines "$def_dl_kb" "$def_ul_kb" >> "$NFT_FILE"
+    # Absent flag is treated as enabled so upgrades keep existing global limits.
+    [ "${def_glimit:-1}" = "1" ] || { def_dl_kb=0; def_ul_kb=0; }
+    def_sched=$(uci -q get "${NAME}.@${NAME}[0].gschedule")
+    def_ts=$(uci   -q get "${NAME}.@${NAME}[0].timestart")
+    def_te=$(uci   -q get "${NAME}.@${NAME}[0].timeend")
+    def_week=$(uci -q get "${NAME}.@${NAME}[0].week")
+    # Absent flag is treated as enabled so upgrades keep an existing schedule.
+    [ "${def_sched:-1}" = "1" ] || { def_ts="00:00"; def_te="00:00"; def_week="0"; }
+    _time_and_day_expr "$def_ts" "$def_te" "$def_week"
+    _catch_all_lines "$def_dl_kb" "$def_ul_kb" "$_time_expr" "$_day_expr" >> "$NFT_FILE"
 
     printf '    }\n}\n' >> "$NFT_FILE"
     nft -f "$NFT_FILE"
@@ -234,17 +250,31 @@ add_device_rules() {
             nft delete rule inet "${NFT_TABLE}" "${NFT_CHAIN}" handle "$handle" 2>/dev/null
     done
 
-    local def_dl def_ul def_dl_kb def_ul_kb
+    # Preserve this device's expr before _time_and_day_expr is reused below.
+    local dev_time_expr="$_time_expr" dev_day_expr="$_day_expr"
+
+    local def_glimit def_sched def_dl def_ul def_dl_kb def_ul_kb def_ts def_te def_week
+    def_glimit=$(uci -q get "${NAME}.@${NAME}[0].glimit")
     def_dl=$(uci -q get "${NAME}.@${NAME}[0].download")
     def_ul=$(uci -q get "${NAME}.@${NAME}[0].upload")
     def_dl_kb=$(awk -v v="${def_dl:-0}" 'BEGIN { printf "%.0f", v * 125 }')
     def_ul_kb=$(awk -v v="${def_ul:-0}" 'BEGIN { printf "%.0f", v * 125 }')
+    # Absent flag is treated as enabled so upgrades keep existing global limits.
+    [ "${def_glimit:-1}" = "1" ] || { def_dl_kb=0; def_ul_kb=0; }
+    def_sched=$(uci -q get "${NAME}.@${NAME}[0].gschedule")
+    def_ts=$(uci   -q get "${NAME}.@${NAME}[0].timestart")
+    def_te=$(uci   -q get "${NAME}.@${NAME}[0].timeend")
+    def_week=$(uci -q get "${NAME}.@${NAME}[0].week")
+    # Absent flag is treated as enabled so upgrades keep an existing schedule.
+    [ "${def_sched:-1}" = "1" ] || { def_ts="00:00"; def_te="00:00"; def_week="0"; }
+    _time_and_day_expr "$def_ts" "$def_te" "$def_week"
+    local def_time_expr="$_time_expr" def_day_expr="$_day_expr"
 
     local tmp="/tmp/nft-limiter_dev${idx}.nft"
     {
         printf 'table inet %s {\n    chain %s {\n' "$NFT_TABLE" "$NFT_CHAIN"
-        _rule_lines "$idx" "$target" "$dl_kb" "$ul_kb" "$_time_expr" "$_day_expr"
-        _catch_all_lines "$def_dl_kb" "$def_ul_kb"
+        _rule_lines "$idx" "$target" "$dl_kb" "$ul_kb" "$dev_time_expr" "$dev_day_expr"
+        _catch_all_lines "$def_dl_kb" "$def_ul_kb" "$def_time_expr" "$def_day_expr"
         printf '    }\n}\n'
     } > "$tmp"
     nft -f "$tmp"
