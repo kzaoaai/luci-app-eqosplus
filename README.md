@@ -14,10 +14,11 @@ Fast, minimal-CPU per-device bandwidth control for OpenWrt using native **nftabl
 - **Native nftables rules** — `limit rate over … drop` policing, near-zero CPU overhead
 - **Selectable Interfaces** — Select interface(s) where traffic is shaped (wan, wan2, VPN, etc...)
 - **Flexible targets** — single IP, CIDR subnet, or arbitrary IP range (`192.168.1.10-192.168.1.50`), with a device picker populating existing devices and hostnames
-- **Time scheduling** — per-rule time of the day and time of the week selection
+- **Time scheduling** — time-of-day and day-of-week windows, both per-rule and for the global default limit
+- **Live stats** — a Status tab shows per-device accepted/dropped traffic from native nftables counters
 - **Self-healing** — hooks into `firewall4` include so rules survive interface reloads
 - **Modern UI** — sortable GridSection with live device picker (hostname + IP from DHCP/ARP)
-- **APK + IPK** — CI builds packages for OpenWrt 25.12+ (apk) and 24.10 (ipk)
+- **APK + IPK** — CI builds packages for OpenWrt 25.12+ (apk) and 24.10 (ipk); both are supported
 
 ## Installation
 
@@ -33,10 +34,16 @@ Then open **LuCI → Network → NFT Limiter**.
 ## UCI config reference
 
 ```
-config nftlimiter
-    option enabled  1
-    option download 200   # Mbit/s global default
-    option upload   100
+config nft-limiter
+    option enabled   1            # master service on/off
+    option iface     'wan'        # interface(s) to rate-limit (space-separated)
+    option glimit    1            # enable the global default (catch-all) limit
+    option download  200          # Mbit/s global default (0 = unlimited)
+    option upload    100
+    option gschedule 0            # restrict the global limit to a window/days
+    option timestart 00:00        # global window (only when gschedule = 1)
+    option timeend   00:00
+    option week      0            # global days, comma-separated (0 = every day)
 
 config device
     option enable    1

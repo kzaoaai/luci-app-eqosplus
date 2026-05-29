@@ -1,5 +1,13 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
 
 msgid "NFT Limiter"
+msgstr ""
+
+msgid "Settings"
+msgstr ""
+
+msgid "Status"
 msgstr ""
 
 msgid "Per-device bandwidth control via nftables rate limiting. Requires OpenWrt 25.12+ with firewall4 / nftables."
@@ -14,19 +22,58 @@ msgstr ""
 msgid "Service Status"
 msgstr ""
 
+msgid "Rate-Limited Interfaces"
+msgstr ""
+
+msgid "Select WAN / VPN interfaces whose traffic should be rate-limited. Traffic between local interfaces is never affected."
+msgstr ""
+
+msgid "Enable Global Default Limit"
+msgstr ""
+
+msgid "Apply a fallback rate limit to all traffic not covered by a per-device rule. When off, only per-device rules apply."
+msgstr ""
+
 msgid "Global Download Limit (Mbit/s)"
+msgstr ""
+
+msgid "Applies only to devices not covered by a per-device rule. Set to 0 for unlimited."
 msgstr ""
 
 msgid "Global Upload Limit (Mbit/s)"
 msgstr ""
 
-msgid "Rate-Limited Interfaces"
+msgid "Limit Only During Certain Times"
+msgstr ""
+
+msgid "Restrict the global limit to a time window and/or specific days. When off, the global limit applies whenever it is enabled."
+msgstr ""
+
+msgid "Global Time Start"
+msgstr ""
+
+msgid "Global Time End"
+msgstr ""
+
+msgid "Global Days"
+msgstr ""
+
+msgid "The global limit applies only inside this window/days; outside it, un-matched traffic is unrestricted. Leave times at 00:00 and days empty to always apply."
 msgstr ""
 
 msgid "Per-Device Rules"
 msgstr ""
 
+msgid "On"
+msgstr ""
+
 msgid "Device (IP / Range)"
+msgstr ""
+
+msgid "IP, CIDR, or IP range (a.b.c.d-e.f.g.h)"
+msgstr ""
+
+msgid "Enter an IP, CIDR, or IPv4 range (a.b.c.d-e.f.g.h)"
 msgstr ""
 
 msgid "Down (Mbit/s)"
@@ -47,33 +94,86 @@ msgstr ""
 msgid "Comment"
 msgstr ""
 
-msgid "Upload bandwidth(Mbit/s)"
+msgid "optional note"
 msgstr ""
 
-msgid "Download bandwidth(Mbit/s)"
+msgid "Must be HH:MM (00:00–23:59)"
 msgstr ""
 
-msgid "Start control time"
+msgid "Leave empty for every day."
 msgstr ""
 
-msgid "Stop control time"
+msgid "Every day"
 msgstr ""
 
-msgid "Week Day(1~7)"
+msgid "Weekdays"
 msgstr ""
 
-msgid "Suggested feedback:"
+msgid "Weekend"
 msgstr ""
 
-msgid "Set the interface used for restriction, use pppoe-wan for dialing, use WAN hardware interface for DHCP mode (such as eth1), and use br-lan for bypass mode"
+msgid "Mon"
 msgstr ""
 
-msgid "Rest Day"
+msgid "Tue"
 msgstr ""
 
-msgid "Workday"
+msgid "Wed"
 msgstr ""
 
-msgid "Automatic settings"
+msgid "Thu"
 msgstr ""
 
+msgid "Fri"
+msgstr ""
+
+msgid "Sat"
+msgstr ""
+
+msgid "Sun"
+msgstr ""
+
+msgid "not in neighbour table"
+msgstr ""
+
+msgid "GitHub"
+msgstr ""
+
+msgid "Releases"
+msgstr ""
+
+msgid "Update available:"
+msgstr ""
+
+msgid "NFT Limiter Status"
+msgstr ""
+
+msgid "Live traffic accounting per rule. Counters reset whenever the rule set is rebuilt (service restart, or adding/editing a device)."
+msgstr ""
+
+msgid "Device"
+msgstr ""
+
+msgid "Down accepted"
+msgstr ""
+
+msgid "Down dropped"
+msgstr ""
+
+msgid "Up accepted"
+msgstr ""
+
+msgid "Up dropped"
+msgstr ""
+
+msgid "(disabled)"
+msgstr ""
+
+msgid "Global default limit"
+msgstr ""
+
+msgid "The QoS chain is not loaded. Enable NFT Limiter on the Settings tab and Save & Apply."
+msgstr ""
+
+msgid "Chain loaded, but no device or global limit rules are active."
+msgstr ""

@@ -67,16 +67,16 @@ _rule_lines() {
 
     if [ "$dl_kb" -gt 0 ] 2>/dev/null; then
         local dl_burst=$((dl_kb * 2))
-        printf '        %s %slimit rate over %s kbytes/second burst %s kbytes drop comment "dev_%s_dl"\n' \
+        printf '        %s %scounter limit rate over %s kbytes/second burst %s kbytes drop comment "dev_%s_dl"\n' \
             "$dl_match" "$prefix" "$dl_kb" "$dl_burst" "$idx"
     fi
-    printf '        %s %saccept comment "dev_%s_dl_pass"\n' "$dl_match" "$prefix" "$idx"
+    printf '        %s %scounter accept comment "dev_%s_dl_pass"\n' "$dl_match" "$prefix" "$idx"
     if [ "$ul_kb" -gt 0 ] 2>/dev/null; then
         local ul_burst=$((ul_kb * 2))
-        printf '        %s %slimit rate over %s kbytes/second burst %s kbytes drop comment "dev_%s_ul"\n' \
+        printf '        %s %scounter limit rate over %s kbytes/second burst %s kbytes drop comment "dev_%s_ul"\n' \
             "$ul_match" "$prefix" "$ul_kb" "$ul_burst" "$idx"
     fi
-    printf '        %s %saccept comment "dev_%s_ul_pass"\n' "$ul_match" "$prefix" "$idx"
+    printf '        %s %scounter accept comment "dev_%s_ul_pass"\n' "$ul_match" "$prefix" "$idx"
 }
 
 # -----------------------------------------------------------------------
@@ -94,12 +94,12 @@ _catch_all_lines() {
 
     if [ "$dl_kb" -gt 0 ] 2>/dev/null; then
         local dl_burst=$((dl_kb * 2))
-        printf '        meta iifname { %s } %slimit rate over %s kbytes/second burst %s kbytes drop comment "default_dl"\n' \
+        printf '        meta iifname { %s } %scounter limit rate over %s kbytes/second burst %s kbytes drop comment "default_dl"\n' \
             "$_iface_set" "$prefix" "$dl_kb" "$dl_burst"
     fi
     if [ "$ul_kb" -gt 0 ] 2>/dev/null; then
         local ul_burst=$((ul_kb * 2))
-        printf '        meta oifname { %s } %slimit rate over %s kbytes/second burst %s kbytes drop comment "default_ul"\n' \
+        printf '        meta oifname { %s } %scounter limit rate over %s kbytes/second burst %s kbytes drop comment "default_ul"\n' \
             "$_iface_set" "$prefix" "$ul_kb" "$ul_burst"
     fi
 }

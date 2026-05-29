@@ -32,6 +32,8 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$VERSION/" luci-app-nft-limiter/Makefile
+          sed -i "s/var pkgVersion = '[^']*'/var pkgVersion = '$VERSION'/" \
+            luci-app-nft-limiter/htdocs/luci-static/resources/view/nft-limiter.js
 
       - name: Build with OpenWrt SDK
         uses: openwrt/gh-action-sdk@main

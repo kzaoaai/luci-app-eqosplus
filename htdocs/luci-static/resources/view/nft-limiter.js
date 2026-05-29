@@ -5,6 +5,80 @@
 'require network';
 'require uci';
 
+// Stamped from the git tag at CI build time (see .github/workflows/build.yml).
+var pkgVersion = '1.4.0';
+var REPO_URL = 'https://github.com/kzaoaai/luci-app-nft-limiter';
+
+function cmpVersions(a, b) {
+    var pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+    for (var i = 0; i < Math.max(pa.length, pb.length); i++) {
+        var x = pa[i] || 0, y = pb[i] || 0;
+        if (x > y) return 1;
+        if (x < y) return -1;
+    }
+    return 0;
+}
+
+// About footer: version + repo/releases links, plus a best-effort update check
+// that compares the running version against the latest GitHub release. The check
+// runs in the admin's browser and fails silently with no internet / on CORS.
+function buildFooter() {
+    var updateSpan = E('span', {});
+    var footer = E('div', {
+        'style': 'margin-top:1.5em;padding-top:.6em;border-top:1px solid #ddd;' +
+                 'font-size:90%;color:#888'
+    }, [
+        'luci-app-nft-limiter v' + pkgVersion + ' · ',
+        E('a', { 'href': REPO_URL, 'target': '_blank', 'rel': 'noreferrer' }, _('GitHub')),
+        ' · ',
+        E('a', { 'href': REPO_URL + '/releases', 'target': '_blank', 'rel': 'noreferrer' }, _('Releases')),
+        ' ', updateSpan
+    ]);
+
+    fetch('https://api.github.com/repos/kzaoaai/luci-app-nft-limiter/releases/latest',
+          { headers: { 'Accept': 'application/vnd.github+json' } })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(j) {
+            if (!j || !j.tag_name) return;
+            var latest = String(j.tag_name).replace(/^v/, '');
+            if (cmpVersions(latest, pkgVersion) > 0)
+                updateSpan.appendChild(E('a', {
+                    'href': j.html_url || (REPO_URL + '/releases'),
+                    'target': '_blank', 'rel': 'noreferrer',
+                    'style': 'color:#4CAF50;font-weight:bold'
+                }, '· ' + _('Update available:') + ' v' + latest));
+        })
+        .catch(function() {});
+
+    return footer;
+}
+
+function isIp4(s) {
+    var m = String(s).match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!m) return false;
+    for (var i = 1; i <= 4; i++) { if (+m[i] > 255) return false; }
+    return true;
+}
+
+function ip4ToInt(s) {
+    var p = s.split('.').map(Number);
+    return (p[0] * 16777216) + (p[1] * 65536) + (p[2] * 256) + p[3];
+}
+
+// Accept a single IPv4/IPv6, a v4/v6 CIDR, or an IPv4 range a.b.c.d-e.f.g.h.
+// The backend (root/usr/bin/nft-limiter) handles all of these natively.
+function validateTarget(value) {
+    if (!value) return true;
+    var v = String(value).trim();
+    if (isIp4(v)) return true;
+    var cidr = v.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\/(\d{1,2})$/);
+    if (cidr && isIp4(cidr[1]) && +cidr[2] <= 32) return true;
+    var rng = v.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})-(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+    if (rng && isIp4(rng[1]) && isIp4(rng[2]) && ip4ToInt(rng[1]) <= ip4ToInt(rng[2])) return true;
+    if (v.indexOf(':') !== -1 && /^[0-9a-fA-F:]+(\/\d{1,3})?$/.test(v)) return true;
+    return false;
+}
+
 return view.extend({
     load: function() {
         return Promise.all([
@@ -246,8 +320,11 @@ return view.extend({
         o = s.option(form.Value, 'target', _('Device (IP / Range)'));
         o.rmempty   = false;
         o.editable  = true;
-        o.datatype  = 'or(ipmask4, ipmask6, ip4addr, "")';
         o.placeholder = _('IP, CIDR, or IP range (a.b.c.d-e.f.g.h)');
+        o.validate = function(section_id, value) {
+            if (validateTarget(value)) return true;
+            return _('Enter an IP, CIDR, or IPv4 range (a.b.c.d-e.f.g.h)');
+        };
         var namedDevices = [], unnamedDevices = [];
         hints.getMACHints().forEach(function(entry) {
             var mac  = entry[0];
@@ -308,6 +385,9 @@ return view.extend({
         o.editable = true;
         o.width = '20%';
 
-        return m.render();
+        return m.render().then(function(node) {
+            node.appendChild(buildFooter());
+            return node;
+        });
     }
 });

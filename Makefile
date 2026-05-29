@@ -1,22 +1,22 @@
 #
-# Copyright (C) 2006-2017 OpenWrt.org
 # Copyright (C) 2025 kzaoaai (based on work by sirpdboy)
-# This is free software, licensed under the GNU General Public License v2.
-# See /LICENSE for more information.
+# This is free software, licensed under the MIT License.
+# See ./LICENSE for more information.
 #
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-nft-limiter
 
-PKG_LICENSE:=Apache-2.0
+PKG_LICENSE:=MIT
+PKG_LICENSE_FILES:=LICENSE
 
 LUCI_TITLE:=LuCI app for NFT Limiter (nftables/fw4 per-device bandwidth control)
 LUCI_DESCRIPTION:=Per-device download/upload rate limiting via nftables. Supports IP, CIDR, and IP ranges. Requires OpenWrt 25.12+ with firewall4.
 LUCI_DEPENDS:=+ip-full +nftables +bc +firewall4
 LUCI_PKGARCH:=all
 
-PKG_VERSION:=1.3.0
+PKG_VERSION:=1.4.0
 PKG_RELEASE:=1
 PKG_MAINTAINER:=kzaoaai
 
