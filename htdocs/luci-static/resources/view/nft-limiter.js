@@ -11,7 +11,8 @@ return view.extend({
             network.getHostHints(),
             uci.load('nft-limiter'),
             L.resolveDefault(fs.exec_direct('/usr/sbin/nft', ['list', 'chain', 'inet', 'fw4', 'custom_qos_enforce']), null),
-            network.getNetworks()
+            network.getNetworks(),
+            L.resolveDefault(fs.exec_direct('/sbin/ip', ['-j', 'neigh', 'show']), null)
         ]);
     },
 
@@ -19,6 +20,31 @@ return view.extend({
         var hints = data[0];
         var nftOutput = data[2];
         var networks = data[3];
+
+        // Map of IP address -> kernel neighbour (ARP/NDP) state for a
+        // simple online/offline dot next to each device in the dropdown.
+        var neighState = {};
+        if (data[4]) {
+            try {
+                JSON.parse(data[4]).forEach(function(n) {
+                    if (n.dst && Array.isArray(n.state) && n.state.length)
+                        neighState[n.dst] = n.state[0];
+                });
+            } catch (e) {}
+        }
+        var deviceLabel = function(text, ip) {
+            var state = neighState[ip];
+            var online = state && /^(REACHABLE|STALE|DELAY|PROBE|PERMANENT|NOARP)$/.test(state);
+            return E('span', { 'title': state || _('not in neighbour table') }, [
+                E('span', {
+                    'style': 'display:inline-block;width:8px;height:8px;border-radius:50%;' +
+                             'margin-right:6px;vertical-align:middle;background:' +
+                             (online ? '#4CAF50' : '#bbb')
+                }),
+                text
+            ]);
+        };
+
         var activeDevices = 0;
         if (nftOutput) {
             var seen = {};
@@ -98,6 +124,7 @@ return view.extend({
 
         o = s.option(form.Value, 'target', _('Device (IP / Range)'));
         o.rmempty   = false;
+        o.editable  = true;
         o.datatype  = 'or(ipmask4, ipmask6, ip4addr, "")';
         o.placeholder = _('IP, CIDR, or IP range (a.b.c.d-e.f.g.h)');
         var namedDevices = [], unnamedDevices = [];
@@ -124,7 +151,7 @@ return view.extend({
             }
             return a.val < b.val ? -1 : a.val > b.val ? 1 : 0;
         });
-        namedDevices.concat(unnamedDevices).forEach(function(d) { o.value(d.val, d.label); });
+        namedDevices.concat(unnamedDevices).forEach(function(d) { o.value(d.val, deviceLabel(d.label, d.ip)); });
         o.textvalue = function(section_id) {
             var val = this.cfgvalue(section_id);
             if (!val) return '';
