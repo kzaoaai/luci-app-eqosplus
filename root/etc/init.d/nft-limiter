@@ -8,6 +8,38 @@ USE_PROCD=1
 
 NAME=nft-limiter
 
+# Custom verbs driven by the LuCI Status tab service controls. These drive the
+# one-shot engine directly (and toggle the boot symlink) rather than procd
+# start/stop, which would emit harmless "ubus service delete" noise since this
+# service runs no persistent daemon.
+#   on     : set the master flag, enable on boot, and load the rules now
+#   off    : clear the master flag, stop the rules, and disable on boot
+#   reapply: rebuild the rules now (no flag change); no-op when disabled
+EXTRA_COMMANDS="on off reapply"
+EXTRA_HELP="        on      Enable the limiter (set flag, enable on boot, load rules)
+        off     Disable the limiter (clear flag, stop rules, disable on boot)
+        reapply Rebuild the rules now without changing the enabled flag"
+
+on() {
+    uci -q set "${NAME}.@${NAME}[0].enabled=1"
+    uci -q commit "$NAME"
+    "/etc/init.d/${NAME}" enable
+    nft-limiter start
+}
+
+off() {
+    uci -q set "${NAME}.@${NAME}[0].enabled=0"
+    uci -q commit "$NAME"
+    nft-limiter stop
+    "/etc/init.d/${NAME}" disable
+}
+
+reapply() {
+    [ "$(uci -q get "${NAME}.@${NAME}[0].enabled")" = "1" ] || return 0
+    nft-limiter stop
+    nft-limiter start
+}
+
 start_service() {
     nft-limiter stop
 

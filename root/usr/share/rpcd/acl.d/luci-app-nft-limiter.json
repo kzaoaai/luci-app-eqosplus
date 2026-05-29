@@ -8,7 +8,10 @@
 			}
 		},
 		"write": {
-			"uci": [ "nft-limiter" ]
+			"uci": [ "nft-limiter" ],
+			"file": {
+				"/etc/init.d/nft-limiter": [ "exec" ]
+			}
 		}
 	}
 }

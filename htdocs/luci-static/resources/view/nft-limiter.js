@@ -2,11 +2,13 @@
 'require view';
 'require form';
 'require fs';
+'require dom';
+'require ui';
+'require poll';
 'require network';
 'require uci';
+'require nftctl';
 
-// Stamped from the git tag at CI build time (see .github/workflows/build.yml).
-var pkgVersion = '1.5.0';
 var REPO_URL = 'https://github.com/kzaoaai/luci-app-nft-limiter';
 var INSTALL_CMD = 'wget -qO- https://raw.githubusercontent.com/kzaoaai/luci-app-nft-limiter/main/install.sh | sh';
 
@@ -29,7 +31,7 @@ function buildFooter() {
         'style': 'margin-top:1.5em;padding-top:.6em;border-top:1px solid #ddd;' +
                  'font-size:90%;color:#888'
     }, [
-        'luci-app-nft-limiter v' + pkgVersion + ' · ',
+        'luci-app-nft-limiter v' + nftctl.pkgVersion + ' · ',
         E('a', { 'href': REPO_URL, 'target': '_blank', 'rel': 'noreferrer' }, _('GitHub')),
         ' · ',
         E('a', { 'href': REPO_URL + '/releases', 'target': '_blank', 'rel': 'noreferrer' }, _('Releases')),
@@ -42,7 +44,7 @@ function buildFooter() {
         .then(function(j) {
             if (!j || !j.tag_name) return;
             var latest = String(j.tag_name).replace(/^v/, '');
-            if (cmpVersions(latest, pkgVersion) <= 0) return;
+            if (cmpVersions(latest, nftctl.pkgVersion) <= 0) return;
             updateSpan.appendChild(E('a', {
                 'href': j.html_url || (REPO_URL + '/releases'),
                 'target': '_blank', 'rel': 'noreferrer',
@@ -89,28 +91,110 @@ function validateTarget(value) {
     return false;
 }
 
+// --- Stats tab: live per-rule traffic counters from `nft -j list chain` ------
+function fmtBytes(b) {
+    b = Number(b) || 0;
+    var units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'], i = 0;
+    while (b >= 1024 && i < units.length - 1) { b /= 1024; i++; }
+    return (i === 0 ? b : b.toFixed(2)) + ' ' + units[i];
+}
+
+// Parse `nft -j list chain` output into a map of comment -> {packets, bytes}.
+// Returns null when the chain is not loaded (command failed).
+function parseCounters(jsonStr) {
+    if (!jsonStr) return null;
+    var map = {};
+    try {
+        var data = JSON.parse(jsonStr);
+        (data.nftables || []).forEach(function(item) {
+            var r = item.rule;
+            if (!r || !r.comment || !Array.isArray(r.expr)) return;
+            var c = null;
+            r.expr.forEach(function(e) { if (e && e.counter) c = e.counter; });
+            if (c) map[r.comment] = { packets: c.packets || 0, bytes: c.bytes || 0 };
+        });
+        return map;
+    } catch (e) {
+        return {};
+    }
+}
+
+function cell(counters, comment) {
+    var c = counters[comment];
+    if (!c) return '—';
+    return fmtBytes(c.bytes) + ' (' + c.packets + ' pkts)';
+}
+
+function statsRows(counters) {
+    var rows = [];
+    uci.sections('nft-limiter', 'device').forEach(function(dev, idx) {
+        var target = dev.target || '—';
+        var label = dev.comment ? (dev.comment + ' — ' + target) : target;
+        var enabled = (dev.enable !== '0');
+        rows.push([
+            enabled ? label : (label + ' ' + _('(disabled)')),
+            cell(counters, 'dev_' + idx + '_dl_pass'),
+            cell(counters, 'dev_' + idx + '_dl'),
+            cell(counters, 'dev_' + idx + '_ul_pass'),
+            cell(counters, 'dev_' + idx + '_ul')
+        ]);
+    });
+    if (counters['default_dl'] || counters['default_ul']) {
+        rows.push([
+            E('em', {}, _('Global default limit')),
+            '—', cell(counters, 'default_dl'),
+            '—', cell(counters, 'default_ul')
+        ]);
+    }
+    return rows;
+}
+
+function statsTable(counters) {
+    if (counters === null)
+        return E('div', { 'class': 'alert-message warning' }, [
+            _('The QoS chain is not loaded. Use the Enable button above to start the limiter.')
+        ]);
+    var rows = statsRows(counters);
+    if (!rows.length)
+        return E('div', { 'class': 'alert-message' }, [
+            _('Chain loaded, but no device or global limit rules are active.')
+        ]);
+    var head = E('tr', { 'class': 'tr table-titles' }, [
+        E('th', { 'class': 'th' }, _('Device')),
+        E('th', { 'class': 'th' }, _('Down accepted')),
+        E('th', { 'class': 'th' }, _('Down dropped')),
+        E('th', { 'class': 'th' }, _('Up accepted')),
+        E('th', { 'class': 'th' }, _('Up dropped'))
+    ]);
+    var body = rows.map(function(r) {
+        return E('tr', { 'class': 'tr' }, r.map(function(c) {
+            return E('td', { 'class': 'td' }, [c]);
+        }));
+    });
+    return E('table', { 'class': 'table' }, [head].concat(body));
+}
+
 return view.extend({
     load: function() {
         return Promise.all([
             network.getHostHints(),
             uci.load('nft-limiter'),
-            L.resolveDefault(fs.exec_direct('/usr/sbin/nft', ['list', 'chain', 'inet', 'fw4', 'custom_qos_enforce']), null),
             network.getNetworks(),
-            L.resolveDefault(fs.exec_direct('/sbin/ip', ['-j', 'neigh', 'show']), null)
+            L.resolveDefault(fs.exec_direct('/sbin/ip', ['-j', 'neigh', 'show']), null),
+            L.resolveDefault(fs.exec_direct('/usr/sbin/nft', nftctl.NFT_ARGS), null)
         ]);
     },
 
     render: function(data) {
         var hints = data[0];
-        var nftOutput = data[2];
-        var networks = data[3];
+        var networks = data[2];
 
         // Map of IP address -> kernel neighbour (ARP/NDP) state for a
         // simple online/offline dot next to each device in the dropdown.
         var neighState = {};
-        if (data[4]) {
+        if (data[3]) {
             try {
-                JSON.parse(data[4]).forEach(function(n) {
+                JSON.parse(data[3]).forEach(function(n) {
                     if (n.dst && Array.isArray(n.state) && n.state.length)
                         neighState[n.dst] = n.state[0];
                 });
@@ -129,15 +213,6 @@ return view.extend({
             ]);
         };
 
-        var activeDevices = 0;
-        if (nftOutput) {
-            var seen = {};
-            var re = /comment "dev_(\d+)_/g;
-            var match;
-            while ((match = re.exec(nftOutput)) !== null)
-                seen[match[1]] = true;
-            activeDevices = Object.keys(seen).length;
-        }
         var m, s, o;
 
         // HH:MM time field, shared by the global and per-device sections.
@@ -211,24 +286,8 @@ return view.extend({
         s.anonymous = true;
         s.addremove = false;
 
-        o = s.option(form.Flag, 'enabled', _('Enable NFT Limiter'));
-        o.default = '0';
-        o.rmempty = false;
-
-        o = s.option(form.DummyValue, '_status', _('Service Status'));
-        o.rawhtml = true;
-        o.cfgvalue = function() {
-            if (!nftOutput)
-                return '<em style="color:#f44336">Inactive</em> — chain not loaded';
-            var hasDefault = /comment "default_(dl|ul)"/.test(nftOutput);
-            var parts = [];
-            if (activeDevices > 0)
-                parts.push(activeDevices + ' device rule(s)');
-            if (hasDefault)
-                parts.push('default limit active');
-            return '<em style="color:#4CAF50">Active</em> — ' +
-                (parts.length ? parts.join(', ') : 'chain loaded, no rules');
-        };
+        // Service on/off and live status now live on the Status tab
+        // (Enable / Disable / Restart controls).
 
         // Which interfaces are rate-limited (applies to per-device AND global rules).
         o = s.option(form.MultiValue, 'iface', _('Rate-Limited Interfaces'),
@@ -320,6 +379,7 @@ return view.extend({
         s.addremove = true;
         s.sortable  = true;
         s.nodescription = true;
+        s.description = _('Targets are matched most-specific first: a single IP (or smaller subnet) takes priority over a broader subnet or range that contains it, regardless of row order. Two partially overlapping ranges cannot both apply where they overlap.');
 
         // enable toggle
         o = s.option(form.Flag, 'enable', _('On'));
@@ -395,9 +455,31 @@ return view.extend({
         o.editable = true;
         o.width = '20%';
 
-        return m.render().then(function(node) {
-            node.appendChild(buildFooter());
-            return node;
+        return m.render().then(function(formNode) {
+            // Stats tab: live counter table, refreshed every 5s.
+            var tableBox = E('div', {}, statsTable(parseCounters(data[4])));
+            poll.add(function() {
+                return L.resolveDefault(fs.exec_direct('/usr/sbin/nft', nftctl.NFT_ARGS), null)
+                    .then(function(out) { dom.content(tableBox, statsTable(parseCounters(out))); });
+            }, 5);
+
+            // Settings / Stats tabs below the always-visible status block.
+            var tabs = E('div', {}, [
+                E('div', { 'class': 'cbi-section', 'data-tab': 'settings', 'data-tab-title': _('Settings') }, [
+                    formNode
+                ]),
+                E('div', { 'class': 'cbi-section', 'data-tab': 'stats', 'data-tab-title': _('Stats') }, [
+                    E('h3', {}, _('Traffic Statistics')),
+                    E('p', {}, _('Live traffic accounting per rule. Counters reset whenever the rule set is rebuilt (service restart, or adding/editing a device).')),
+                    tableBox
+                ])
+            ]);
+            // Build the full tree first so the tab wrapper has a parent, then
+            // init the tab group (initTabGroup inserts its menu via
+            // group.parentNode, which must not be null).
+            var root = E('div', {}, [ nftctl.render(), tabs, buildFooter() ]);
+            ui.tabs.initTabGroup(tabs.childNodes);
+            return root;
         });
     }
 });

@@ -7,19 +7,13 @@ msgstr ""
 msgid "Settings"
 msgstr ""
 
-msgid "Status"
+msgid "Stats"
 msgstr ""
 
 msgid "Per-device bandwidth control via nftables rate limiting. Requires OpenWrt 25.12+ with firewall4 / nftables."
 msgstr ""
 
 msgid "Global Settings"
-msgstr ""
-
-msgid "Enable NFT Limiter"
-msgstr ""
-
-msgid "Service Status"
 msgstr ""
 
 msgid "Rate-Limited Interfaces"
@@ -62,6 +56,9 @@ msgid "The global limit applies only inside this window/days; outside it, un-mat
 msgstr ""
 
 msgid "Per-Device Rules"
+msgstr ""
+
+msgid "Targets are matched most-specific first: a single IP (or smaller subnet) takes priority over a broader subnet or range that contains it, regardless of row order. Two partially overlapping ranges cannot both apply where they overlap."
 msgstr ""
 
 msgid "On"
@@ -151,6 +148,42 @@ msgstr ""
 msgid "NFT Limiter Status"
 msgstr ""
 
+msgid "Traffic Statistics"
+msgstr ""
+
+msgid "Running"
+msgstr ""
+
+msgid "Stopped"
+msgstr ""
+
+msgid "fw4 nft mode"
+msgstr ""
+
+msgid "device rule(s)"
+msgstr ""
+
+msgid "global default limit active"
+msgstr ""
+
+msgid "no rules loaded"
+msgstr ""
+
+msgid "Enable"
+msgstr ""
+
+msgid "Disable"
+msgstr ""
+
+msgid "Restart"
+msgstr ""
+
+msgid "Service command failed (exit %d): %s"
+msgstr ""
+
+msgid "Service command failed: "
+msgstr ""
+
 msgid "Live traffic accounting per rule. Counters reset whenever the rule set is rebuilt (service restart, or adding/editing a device)."
 msgstr ""
 
@@ -175,7 +208,7 @@ msgstr ""
 msgid "Global default limit"
 msgstr ""
 
-msgid "The QoS chain is not loaded. Enable NFT Limiter on the Settings tab and Save & Apply."
+msgid "The QoS chain is not loaded. Use the Enable button above to start the limiter."
 msgstr ""
 
 msgid "Chain loaded, but no device or global limit rules are active."

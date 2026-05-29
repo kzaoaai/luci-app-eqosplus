@@ -38,6 +38,61 @@ _build_iface_set() {
 }
 
 # -----------------------------------------------------------------------
+# _ip4_to_int <a.b.c.d> -- echo the 32-bit integer value, or return 1 if
+#   the argument is not a dotted-quad IPv4 address.
+# -----------------------------------------------------------------------
+_ip4_to_int() {
+    local ip="$1" a b c d o
+    case "$ip" in
+        *.*.*.*) ;;
+        *) return 1 ;;
+    esac
+    a="${ip%%.*}"; ip="${ip#*.}"
+    b="${ip%%.*}"; ip="${ip#*.}"
+    c="${ip%%.*}"; ip="${ip#*.}"
+    d="$ip"
+    for o in "$a" "$b" "$c" "$d"; do
+        case "$o" in ''|*[!0-9]*) return 1 ;; esac
+        [ "$o" -le 255 ] || return 1
+    done
+    echo "$(( (a << 24) + (b << 16) + (c << 8) + d ))"
+}
+
+# -----------------------------------------------------------------------
+# _target_addr_count <target> -- echo how many addresses the target covers.
+#   Used as a specificity sort key: fewer addresses = more specific. So a
+#   single host sorts before a subnet, and a tight subnet before a broad
+#   one. This lets a per-host rule win over a subnet/range that contains
+#   it, regardless of the order the devices appear in UCI (nftables is
+#   first-match and the pass-through accept is terminal).
+#     single host = 1 ; IPv4 CIDR = 2^(32-prefix) ; range = end-start+1.
+#   IPv6 CIDR and anything unparseable fall back to a very large key
+#   (treated as least specific, emitted last).
+# -----------------------------------------------------------------------
+_target_addr_count() {
+    local t="$1" s e si ei pfx
+    case "$t" in
+        *-*)   # IPv4 range  start-end
+            s="${t%%-*}"; e="${t##*-}"
+            si=$(_ip4_to_int "$s") || { echo 4294967296; return; }
+            ei=$(_ip4_to_int "$e") || { echo 4294967296; return; }
+            [ "$ei" -ge "$si" ] && { echo "$(( ei - si + 1 ))"; return; }
+            echo 4294967296 ;;
+        */*)   # CIDR (IPv4 or IPv6)
+            pfx="${t##*/}"
+            case "$t" in
+                *:*) echo 4294967295 ;;   # IPv6 CIDR: emit last
+                *)
+                    case "$pfx" in ''|*[!0-9]*) echo 4294967296; return ;; esac
+                    { [ "$pfx" -ge 0 ] && [ "$pfx" -le 32 ]; } || { echo 4294967296; return; }
+                    echo "$(( 1 << (32 - pfx) ))" ;;
+            esac ;;
+        *)     # single host (IPv4 or IPv6)
+            echo 1 ;;
+    esac
+}
+
+# -----------------------------------------------------------------------
 # check_firewall_hook -- inject fw4 include once (idempotent)
 # Ensures QoS rules survive every firewall reload.
 # -----------------------------------------------------------------------
@@ -130,34 +185,42 @@ _time_and_day_expr() {
 }
 
 # -----------------------------------------------------------------------
-# generate_rule <cfg>  -- config_foreach callback; appends to $NFT_FILE
+# _collect_dev <cfg>  -- config_foreach callback; records "<addr_count> <idx>"
+#   for each enabled device with a target into $_order_list. $_cfg_idx is
+#   advanced for every device section (incl. disabled) so the recorded index
+#   matches the UCI @device[idx] position (and the dev_<idx> rule comment).
 # -----------------------------------------------------------------------
-_cfg_idx=0
-generate_rule() {
-    local cfg="$1"
-    local enable target download upload timestart timeend week
-
+_collect_dev() {
+    local cfg="$1" enable target
     config_get_bool enable "$cfg" enable 1
     if [ "$enable" -eq 0 ]; then
         _cfg_idx=$((_cfg_idx + 1))
         return 0
     fi
-
-    config_get target    "$cfg" target
-    config_get download  "$cfg" download
-    config_get upload    "$cfg" upload
-    config_get timestart "$cfg" timestart
-    config_get timeend   "$cfg" timeend
-    config_get week      "$cfg" week
-
-    if [ -n "$target" ]; then
-        local dl_kb ul_kb
-        dl_kb=$(awk -v v="${download:-0}" 'BEGIN { printf "%.0f", v * 125 }')
-        ul_kb=$(awk -v v="${upload:-0}"   'BEGIN { printf "%.0f", v * 125 }')
-        _time_and_day_expr "$timestart" "$timeend" "$week"
-        _rule_lines "$_cfg_idx" "$target" "$dl_kb" "$ul_kb" "$_time_expr" "$_day_expr" >> "$NFT_FILE"
-    fi
+    config_get target "$cfg" target
+    [ -n "$target" ] && \
+        printf '%s\t%s\n' "$(_target_addr_count "$target")" "$_cfg_idx" >> "$_order_list"
     _cfg_idx=$((_cfg_idx + 1))
+}
+
+# -----------------------------------------------------------------------
+# _emit_device <idx>  -- read UCI @device[idx] and print its rule lines to
+#   stdout. Keeps dev_<idx> tied to the original section index.
+# -----------------------------------------------------------------------
+_emit_device() {
+    local idx="$1"
+    local target download upload timestart timeend week dl_kb ul_kb
+    target=$(uci -q get "${NAME}.@device[${idx}].target")
+    [ -z "$target" ] && return 0
+    download=$(uci  -q get "${NAME}.@device[${idx}].download")
+    upload=$(uci    -q get "${NAME}.@device[${idx}].upload")
+    timestart=$(uci -q get "${NAME}.@device[${idx}].timestart")
+    timeend=$(uci   -q get "${NAME}.@device[${idx}].timeend")
+    week=$(uci      -q get "${NAME}.@device[${idx}].week")
+    dl_kb=$(awk -v v="${download:-0}" 'BEGIN { printf "%.0f", v * 125 }')
+    ul_kb=$(awk -v v="${upload:-0}"   'BEGIN { printf "%.0f", v * 125 }')
+    _time_and_day_expr "$timestart" "$timeend" "$week"
+    _rule_lines "$idx" "$target" "$dl_kb" "$ul_kb" "$_time_expr" "$_day_expr"
 }
 
 # -----------------------------------------------------------------------
@@ -177,7 +240,20 @@ build_chain() {
         printf 'table inet %s {\n    chain %s {\n' "$NFT_TABLE" "$NFT_CHAIN"
     } > "$NFT_FILE"
 
-    config_foreach generate_rule device
+    # Emit device rules most-specific-first (smallest address count) so a
+    # per-host rule wins over a broader subnet/range that contains it. The
+    # dev_<idx> comment keeps the original UCI section index so the Status
+    # view's index mapping stays correct.
+    _order_list="/tmp/nft-limiter-order.$$"
+    : > "$_order_list"
+    _cfg_idx=0
+    config_foreach _collect_dev device
+    if [ -s "$_order_list" ]; then
+        sort -k1,1n -k2,2n "$_order_list" | while read -r _cnt _didx; do
+            _emit_device "$_didx"
+        done >> "$NFT_FILE"
+    fi
+    rm -f "$_order_list"
 
     local def_glimit def_sched def_dl def_ul def_dl_kb def_ul_kb def_ts def_te def_week
     def_glimit=$(uci -q get "${NAME}.@${NAME}[0].glimit")
