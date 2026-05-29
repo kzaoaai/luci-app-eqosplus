@@ -16,7 +16,7 @@ LUCI_DESCRIPTION:=Per-device download/upload rate limiting via nftables. Support
 LUCI_DEPENDS:=+ip-full +nftables +bc +firewall4
 LUCI_PKGARCH:=all
 
-PKG_VERSION:=1.4.0
+PKG_VERSION:=1.5.0
 PKG_RELEASE:=1
 PKG_MAINTAINER:=kzaoaai
 

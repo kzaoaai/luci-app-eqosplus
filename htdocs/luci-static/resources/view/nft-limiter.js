@@ -6,8 +6,9 @@
 'require uci';
 
 // Stamped from the git tag at CI build time (see .github/workflows/build.yml).
-var pkgVersion = '1.4.0';
+var pkgVersion = '1.5.0';
 var REPO_URL = 'https://github.com/kzaoaai/luci-app-nft-limiter';
+var INSTALL_CMD = 'wget -qO- https://raw.githubusercontent.com/kzaoaai/luci-app-nft-limiter/main/install.sh | sh';
 
 function cmpVersions(a, b) {
     var pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
@@ -41,12 +42,21 @@ function buildFooter() {
         .then(function(j) {
             if (!j || !j.tag_name) return;
             var latest = String(j.tag_name).replace(/^v/, '');
-            if (cmpVersions(latest, pkgVersion) > 0)
-                updateSpan.appendChild(E('a', {
-                    'href': j.html_url || (REPO_URL + '/releases'),
-                    'target': '_blank', 'rel': 'noreferrer',
-                    'style': 'color:#4CAF50;font-weight:bold'
-                }, '· ' + _('Update available:') + ' v' + latest));
+            if (cmpVersions(latest, pkgVersion) <= 0) return;
+            updateSpan.appendChild(E('a', {
+                'href': j.html_url || (REPO_URL + '/releases'),
+                'target': '_blank', 'rel': 'noreferrer',
+                'style': 'color:#4CAF50;font-weight:bold'
+            }, '· ' + _('Update available:') + ' v' + latest));
+            footer.appendChild(E('div', {
+                'style': 'margin-top:.5em'
+            }, [
+                _('Update via SSH:') + ' ',
+                E('code', {
+                    'style': 'user-select:all;background:rgba(127,127,127,.15);' +
+                             'padding:.1em .4em;border-radius:3px;white-space:nowrap'
+                }, INSTALL_CMD)
+            ]));
         })
         .catch(function() {});
 

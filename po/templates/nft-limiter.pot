@@ -145,6 +145,9 @@ msgstr ""
 msgid "Update available:"
 msgstr ""
 
+msgid "Update via SSH:"
+msgstr ""
+
 msgid "NFT Limiter Status"
 msgstr ""
 
